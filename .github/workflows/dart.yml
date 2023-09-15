@@ -1,0 +1,106 @@
+name: Compile Dart Files for Multiple Platforms
+
+on: [push, pull_request]
+
+jobs:
+  compile_linux:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: Set up Dart SDK
+      uses: dart-lang/setup-dart@v1
+      with:
+        sdk: stable
+
+    - name: Compile Dart files
+      run: |
+        find . -type f -name "*.dart" -print0 | while IFS= read -r -d $'\0' line; do
+          dir=$(dirname "$line")
+          # Check for Flutter dependency in pubspec.yaml files up to 3 levels up
+          should_skip=false
+          for level in "." ".." "../.." "../../.."; do
+            if [[ -f "$dir/$level/pubspec.yaml" ]] && grep -q "flutter:" "$dir/$level/pubspec.yaml"; then
+              should_skip=true
+              break
+            fi
+          done
+
+          if $should_skip; then
+            echo "Ignoring $line because a Flutter pubspec.yaml was found in its path."
+            continue
+          fi
+
+          # Check if the file contains a main() function
+          if grep -q "void main()" "$line"; then
+            echo "Compiling $line..."
+            dart compile exe "$line" -o "${line%.dart}.exe"
+          else
+            echo "Skipping $line as it doesn't contain a main function."
+          fi
+        done
+
+    - name: Archive compiled files
+      uses: actions/upload-artifact@v2
+      with:
+        name: compiled-dart-binaries-linux
+        path: |
+          **/*.exe
+
+  compile_windows:
+    runs-on: windows-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: Set up Dart SDK
+      uses: dart-lang/setup-dart@v1
+      with:
+        sdk: stable
+
+    - name: Compile Dart files
+      run: |
+    - name: Compile Dart files
+      run: |
+        function Compile-DartFiles {
+          param (
+            [string]$path = "."
+          )
+
+          $pubspecPath = Join-Path $path "pubspec.yaml"
+
+          # If there's a pubspec.yaml indicating Flutter, return and don't process further
+          if ((Test-Path -Path $pubspecPath) -and (Select-String -Path $pubspecPath -Pattern "flutter:")) {
+            Write-Host "Ignoring path $path due to Flutter indication in pubspec.yaml."
+            return
+          }
+
+          # Process Dart files in the current folder
+          Get-ChildItem -Path $path -Filter "*.dart" | ForEach-Object {
+            # Check if the file contains a main() function
+            if (Select-String -Path $_.FullName -Pattern "void main()") {
+              Write-Host "Compiling $($_.FullName)..."
+              dart compile exe $_.FullName -o "$($_.FullName -replace '\.dart$', '.exe')"
+            } else {
+              Write-Host "Skipping $($_.FullName) as it doesn't contain a main function."
+            }
+          }
+
+          # Process subfolders
+          Get-ChildItem -Path $path -Directory | ForEach-Object {
+            Compile-DartFiles -path $_.FullName
+          }
+        }
+
+        Set-Location ${{ github.workspace }}
+        Compile-DartFiles
+
+    - name: Archive compiled files
+      uses: actions/upload-artifact@v2
+      with:
+        name: compiled-dart-binaries-windows
+        path: |
+          **/*.exe
