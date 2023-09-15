@@ -1,0 +1,48 @@
+name: Build Flutter for Android and iOS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Build Android apps
+        run: |
+          find . -type f -name "pubspec.yaml" -print0 | while IFS= read -r -d $'\0' line; do
+            dir=$(dirname "$line")
+            echo "Checking for google-services configuration in $dir..."
+
+            # Verificar a existência da configuração "google-services.json" nos arquivos build.gradle
+            if grep -q "google-services" "$dir/android/app/build.gradle"; then
+               
+               # Verificar a existência do arquivo google-services.json nas pastas específicas
+               if [ -f "$dir/android/app/src/release/google-services.json" ] ||
+                  [ -f "$dir/android/app/src/google-services.json" ] ||
+                  [ -f "$dir/android/app/google-services.json" ]; then
+                  echo "Compiling app in $dir..."
+                  (cd "$dir" && flutter clean && flutter pub get && flutter build apk --release && ls)
+               else
+                  echo "google-services.json not found in $dir, please provide the required JSON file."
+               fi
+            else
+              echo "No Firebase/Google Services configuration found in $dir, skipping compilation."
+            fi
+          done
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v2
+        with:
+          name: flutter-app-android
+          path: |
+            **/*.apk
+
